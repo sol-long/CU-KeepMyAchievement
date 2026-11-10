@@ -13,14 +13,14 @@ namespace KeepMyAchievement
     /// <summary>
     /// CU-KeepMyAchievement —— 只做两件事：
     ///   1) 禁用 ConsoleScript.CheckForCheats()，让控制台命令不再置位 SteamManager.disableAchievements
-    ///   2) 读档之前把存档 JSON 里的 cheatedSave 改回 false，游戏读到的就是干净数据
-    /// 另提供控制台命令 kma（status / unmarksave）用于查状态和手动清理。
+    ///   2) 读档之后清掉内存里的禁用位，游戏下一次存档时自己把 cheatedSave = false 写进文件
+    /// 另提供控制台命令 kma（status / unmarksave）；只有 kma unmarksave 会写存档文件。
     /// </summary>
     [BepInPlugin(Guid, "CU-KeepMyAchievement", Version)]
     public class KeepMyAchievementPlugin : BaseUnityPlugin
     {
         public const string Guid = "sol-long.cu.keepmyachievement";
-        public const string Version = "0.1.0";
+        public const string Version = "0.1.1";
 
         private const string CommandName = "kma";
         private const string SubStatus = "status";
@@ -28,6 +28,10 @@ namespace KeepMyAchievement
 
         internal static ManualLogSource Log;
 
+        /// <summary>本进程是否已经在控制台里打过一次"working"提示。</summary>
+        internal static bool Greeted;
+
+        private static System.Reflection.MethodInfo _logToConsole;
         private static int _patchedMethods = -1;
         private Harmony _harmony;
 
@@ -37,7 +41,7 @@ namespace KeepMyAchievement
 
             _harmony = new Harmony(Guid);
             _harmony.PatchAll(typeof(CheatPatch));
-            _harmony.PatchAll(typeof(CleanSavePatch));
+            _harmony.PatchAll(typeof(ClearFlagPatch));
             _harmony.PatchAll(typeof(RegisterCommandPatch));
 
             try
@@ -140,11 +144,28 @@ namespace KeepMyAchievement
             if (console) console.Alert(line);
         }
 
-        /// <summary>只写日志的出口，用于读档流程（此时控制台可能是关的）。</summary>
-        internal static void LogSink(string line)
+        /// <summary>只往控制台的历史里追加一行，不打开控制台（LogToConsole 受 echo 开关控制，默认开启）。</summary>
+        internal static void ConsoleLine(string text)
         {
-            Log.LogInfo("[clean] " + line);
+            Log.LogInfo("[console] " + text);
+            try
+            {
+                ConsoleScript console = ConsoleScript.instance;
+                if (!console) return;
+                if (_logToConsole == null)
+                {
+                    _logToConsole = typeof(ConsoleScript).GetMethod(
+                        "LogToConsole",
+                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                }
+                if (_logToConsole != null) _logToConsole.Invoke(console, new object[] { text });
+            }
+            catch (Exception e)
+            {
+                Log.LogWarning("console output failed: " + e.Message);
+            }
         }
+
     }
 
     /// <summary>目标 1：禁用 ConsoleScript.CheckForCheats()，原方法体不执行。</summary>
@@ -158,15 +179,29 @@ namespace KeepMyAchievement
         }
     }
 
-    /// <summary>目标 2：读档之前清掉存档里的 cheatedSave 标记。</summary>
+    /// <summary>
+    /// 目标 2：读档之后清掉内存里的禁用位。存档文件本身不动 ——
+    /// 游戏下一次 SaveGame 会把 cheatedSave = false 写进文件，清洗由游戏自己完成。
+    /// </summary>
     [HarmonyPatch(typeof(SaveSystem), "TryLoadGame")]
-    internal static class CleanSavePatch
+    internal static class ClearFlagPatch
     {
-        private static void Prefix()
+        private static void Postfix()
         {
-            int changed = SaveMarker.CleanAll(KeepMyAchievementPlugin.LogSink);
-            if (changed > 0)
-                KeepMyAchievementPlugin.Log.LogInfo("[patch] cleared the cheated flag in " + changed + " file(s) before loading");
+            bool wasSet = SteamManager.disableAchievements;
+            if (wasSet) SteamManager.disableAchievements = false;
+
+            if (!KeepMyAchievementPlugin.Greeted)
+            {
+                KeepMyAchievementPlugin.Greeted = true;
+                KeepMyAchievementPlugin.ConsoleLine(
+                    "CU-KeepMyAchievement: working - achievements stay enabled (run \"kma status\" for details)");
+            }
+            if (wasSet)
+            {
+                KeepMyAchievementPlugin.ConsoleLine(
+                    "CU-KeepMyAchievement: cleared the achievement lock of this save; the next save writes it as clean");
+            }
         }
     }
 
@@ -298,6 +333,10 @@ namespace KeepMyAchievement
             return changed;
         }
 
+        /// <summary>
+        /// 原子改写：先写临时文件并从磁盘校验，再用 File.Replace 替换（上一版本落到 .keeper.bak），
+        /// 最后回读目标文件确认。任一步失败都不留下半截文件。
+        /// </summary>
         private static bool Rewrite(string path)
         {
             string json = SaveSystem.Unzip(File.ReadAllBytes(path));
@@ -305,16 +344,34 @@ namespace KeepMyAchievement
             obj["cheatedSave"] = false;
             byte[] packed = SaveSystem.Zip(obj.ToString(Formatting.None));
 
-            // 写盘前用游戏自己的管线回读校验，确认能解压、能解析、字段确实为 false
-            JObject verify = JObject.Parse(SaveSystem.Unzip(packed));
-            JToken token = verify["cheatedSave"];
-            if (token == null || token.Type != JTokenType.Boolean || token.Value<bool>())
-                throw new InvalidOperationException("read-back verification failed, file not written");
-
+            string temp = path + ".tmp";
             string backup = path + BackupSuffix;
-            if (!File.Exists(backup)) File.Copy(path, backup);
-            File.WriteAllBytes(path, packed);
-            return true;
+
+            File.WriteAllBytes(temp, packed);
+            try
+            {
+                // 校验磁盘上的临时文件，而不是内存里的字节
+                JToken check = JObject.Parse(SaveSystem.Unzip(File.ReadAllBytes(temp)))["cheatedSave"];
+                if (check == null || check.Type != JTokenType.Boolean || check.Value<bool>())
+                    throw new InvalidOperationException("verification of the temporary file failed, original untouched");
+
+                // Replace 会把原文件内容落到 backup，并在同一卷上原子替换
+                if (File.Exists(backup)) File.Delete(backup);
+                File.Replace(temp, path, backup);
+
+                // 写后回读：确认目标文件确实是干净存档
+                JToken after = JObject.Parse(SaveSystem.Unzip(File.ReadAllBytes(path)))["cheatedSave"];
+                if (after == null || after.Type != JTokenType.Boolean || after.Value<bool>())
+                {
+                    if (File.Exists(backup)) File.Copy(backup, path, true);
+                    throw new InvalidOperationException("read-back failed, original restored from backup");
+                }
+                return true;
+            }
+            finally
+            {
+                if (File.Exists(temp)) File.Delete(temp);
+            }
         }
     }
 }

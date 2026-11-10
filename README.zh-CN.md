@@ -3,8 +3,6 @@
 [English](README.md) · **简体中文**
 
 适用于 *Casualties: Unknown* 的 BepInEx 5 插件，用于保持 Steam 成就可用。
-未经修改的游戏会在两种情况下禁用成就：执行带有作弊校验的控制台命令时，以及载入带有禁用标记的存档时。
-本插件分别处理这两种情况。
 
 ## 工作方式
 
@@ -14,19 +12,20 @@
 | 写入方 | 触发条件 | 处理方式 |
 |---|---|---|
 | `ConsoleScript.CheckForCheats()` | 任一调用该校验的控制台命令 | Harmony Prefix 返回 `false`，原方法体不执行 |
-| `SaveSystem.TryLoadGame()` | 存档文件中的 `cheatedSave` 为 `true` | 在读取文件之前把该字段改写为 `false` |
+| `SaveSystem.TryLoadGame()` | 存档文件中的 `cheatedSave` 为 `true` | 读档完成后在内存中清除该标记；游戏在下一次存档时把 `false` 写回文件 |
 
 两处写入均被阻止后，唯一的读取方 `SteamManager.TryUnlockAchievement()` 不会读到已置位的标记。
 游戏自身的判断逻辑未作任何修改。
 
-本插件不解锁成就，不修改也不屏蔽游戏内的任何提示，不改动存档中的其它字段。
+本插件不解锁成就，不修改也不屏蔽游戏内的任何提示，正常游玩过程中不写入存档文件；
+磁盘上的存档清洗是一个显式动作。
 
 ## 安装
 
 依赖：游戏版本 **1.0**（Steam buildid `26525321`），以及 BepInEx 5.4.23.x（x64，Mono）。
 
 1. 将 `CU-KeepMyAchievement.dll` 复制到 `<游戏目录>\BepInEx\plugins\CU-KeepMyAchievement\`。
-2. 启动游戏，`BepInEx\LogOutput.log` 中应出现 `CU-KeepMyAchievement v0.1.0 loaded.`。
+2. 启动游戏，`BepInEx\LogOutput.log` 中应出现 `CU-KeepMyAchievement v0.1.1 loaded.`。
 
 插件没有配置文件。删除 dll 即可恢复游戏原始行为。
 
@@ -37,9 +36,10 @@
 | 命令 | 说明 |
 |---|---|
 | `kma status` | 输出插件版本、已 patch 的方法数量、`disableAchievements` 的当前值、`SaveSystem.HasSave()` 的结果，以及每个存档文件中保存的标记值 |
-| `kma unmarksave` | 清除存档目录下所有 `*.sv` 文件中的标记。文件会被重写，每个被修改的文件保留一份 `*.keeper.bak` 副本 |
+| `kma unmarksave` | 强制清除存档目录下所有 `*.sv` 文件中的标记。每个文件都以原子替换方式改写，其上一版本保留为 `*.keeper.bak` |
 
-不带参数的 `kma` 输出用法。
+不带参数的 `kma` 输出用法。每局游戏首次读档时，插件还会向控制台历史追加一行确认信息
+（`CU-KeepMyAchievement: working …`），但不会主动打开控制台。
 
 ## 实现说明
 
@@ -48,11 +48,14 @@
   `SteamManager.TryUnlockAchievement()`。
 - 控制台校验采用 Harmony Prefix 返回 `false` 跳过整个方法体，而不是事后清零。事后清零仍会执行原方法，
   而原方法会打开控制台并输出警告；跳过方法体则使该状态从一开始就不存在。
-- 存档为 gzip 压缩的 JSON。标记通过游戏自带的 `SaveSystem.Unzip` 与 `SaveSystem.Zip` 改写，
-  容器格式因此在构造上保持一致。写盘前会把压缩后的字节重新解包并解析；若字段不为 `false`
-  或 JSON 无法解析，则放弃写入。
-- 该标记属于进程级状态，每次启动均为 `false`。游戏每次存档都会把当前值写入存档，
-  因此只有清除文件中保存的值，改动才会持久。
+- **读档不写文件。** `TryLoadGame` 会置位并给出提示，插件在其 Postfix 中把该位清掉。
+  `SaveSystem.SaveGame` 序列化的正是这个字段，因此游戏下一次存档写入的就是 `false`，
+  文件由游戏自己的代码完成清洗；在玩家存档之前，文件保持原值。
+- **`kma unmarksave` 是唯一会写存档文件的路径。** 它用游戏的 `SaveSystem.Zip` 重新打包，
+  对**从磁盘读回**的字节做校验，再用 `File.Replace` 原子替换（同一卷上原子；上一版本落到
+  `.keeper.bak`），最后回读目标文件，若结果不干净则自动从备份恢复。
+- 该标记属于进程级状态，每次启动均为 `false`。由于游戏每次存档都会写入它，
+  只要在内存中清除，下一次存档自然就是干净的。
 
 ## 构建
 
