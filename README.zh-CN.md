@@ -2,7 +2,7 @@
 
 [English](README.md) · **简体中文**
 
-适用于 *Casualties: Unknown* 的 BepInEx 5 插件，用于保持 Steam 成就可用。
+适用于 *Casualties: Unknown* 的 BepInEx 5 插件，用于保持 Steam 成就可用。装上即生效。
 
 ## 安装
 
@@ -13,7 +13,9 @@
 
 插件没有配置文件。删除 dll 即可恢复游戏原始行为。
 
-## 控制台命令
+## 命令（可选）
+
+以下命令都不是必需的。
 
 按 `` ` `` 打开游戏内控制台，输入：
 

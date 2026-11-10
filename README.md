@@ -2,7 +2,8 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-A BepInEx 5 plugin for *Casualties: Unknown* that keeps Steam achievements enabled.
+A BepInEx 5 plugin for *Casualties: Unknown* that keeps Steam achievements enabled. It works as
+soon as it is installed.
 
 ## Installation
 
@@ -14,7 +15,9 @@ Requirements: game version **1.0** (Steam buildid `26525321`), and BepInEx 5.4.2
 
 The plugin has no configuration file. Removing the dll restores the unmodified behaviour.
 
-## Console commands
+## Commands (optional)
+
+None of these are required.
 
 Open the in-game console with `` ` `` and enter:
 
