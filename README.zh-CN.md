@@ -6,19 +6,25 @@
 
 ## 工作方式
 
-成就解锁由一个静态字段统一控制：`SteamManager.disableAchievements`。游戏中只有两个方法写入该字段，
-只有一个方法读取它。
+成就解锁由一个静态字段统一控制：`SteamManager.disableAchievements`。游戏只有两个方法写入它，
+一个方法读取它。
 
 | 写入方 | 触发条件 | 处理方式 |
 |---|---|---|
-| `ConsoleScript.CheckForCheats()` | 任一调用该校验的控制台命令 | Harmony Prefix 返回 `false`，原方法体不执行 |
-| `SaveSystem.TryLoadGame()` | 存档文件中的 `cheatedSave` 为 `true` | 读档完成后在内存中清除该标记；游戏在下一次存档时把 `false` 写回文件 |
+| `ConsoleScript.CheckForCheats()` | 任一调用该校验的控制台命令 | Harmony Prefix 返回 `false`，方法体不执行，因此标记不会被置位，随附的警告也不会打印 |
+| `SaveSystem.TryLoadGame()` | 存档文件中保存了 `cheatedSave: true` | 读档完成后的 Postfix 中清除该标记。游戏自身的警告已经打印，插件不作处理 |
 
-两处写入均被阻止后，唯一的读取方 `SteamManager.TryUnlockAchievement()` 不会读到已置位的标记。
-游戏自身的判断逻辑未作任何修改。
+实际效果：
 
-本插件不解锁成就，不修改也不屏蔽游戏内的任何提示，正常游玩过程中不写入存档文件；
-磁盘上的存档清洗是一个显式动作。
+- 控制台命令不再禁用成就。
+- 载入被标记的存档时，游戏自身的警告仍会出现一次；此后标记为 `false`，本局内成就正常解锁。
+- 下一次正常存档写入的是 `cheatedSave: false`：`SaveSystem.SaveGame` 保存的正是该字段的当前值，
+  文件因此由游戏自己完成清洗；在玩家存档之前，文件保持原值。
+- 正常游玩过程中不写存档文件。`kma unmarksave` 是唯一会重写存档的路径，且采用原子替换。
+- 有两处控制台信息不需要打开控制台即可见：每局首次读档时一行（`… working …`），
+  每次清除被标记存档的锁时一行（`… cleared the achievement lock of this save …`）。
+
+本插件不解锁成就，也不修改或屏蔽游戏内的任何提示。
 
 ## 安装
 
@@ -40,19 +46,12 @@
 
 > **使用 `kma unmarksave` 前请自行备份存档目录。** 该命令会就地重写存档文件，插件不保留副本。
 
-不带参数的 `kma` 输出用法。每局游戏首次读档时，插件还会向控制台历史追加一行确认信息
-（`CU-KeepMyAchievement: working …`），但不会主动打开控制台。
+不带参数的 `kma` 输出用法。
 
 ## 实现说明
 
-- 该闸门是一个静态布尔字段 `SteamManager.disableAchievements`。写入它的是
-  `ConsoleScript.CheckForCheats()` 与 `SaveSystem.TryLoadGame()`，读取它的是
-  `SteamManager.TryUnlockAchievement()`。
 - 控制台校验采用 Harmony Prefix 返回 `false` 跳过整个方法体，而不是事后清零。事后清零仍会执行原方法，
   而原方法会打开控制台并输出警告；跳过方法体则使该状态从一开始就不存在。
-- **读档不写文件。** `TryLoadGame` 会置位并给出提示，插件在其 Postfix 中把该位清掉。
-  `SaveSystem.SaveGame` 序列化的正是这个字段，因此游戏下一次存档写入的就是 `false`，
-  文件由游戏自己的代码完成清洗；在玩家存档之前，文件保持原值。
 - **`kma unmarksave` 是唯一会写存档文件的路径。** 它用游戏的 `SaveSystem.Zip` 重新打包，
   对**从磁盘读回**的字节做校验，写到存档旁的临时文件后用 `MoveFileEx` 原子替换，最后回读结果；
   失败则用保存在内存里的原始字节还原。本插件不保留存档的备份副本。

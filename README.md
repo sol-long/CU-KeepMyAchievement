@@ -7,18 +7,28 @@ A BepInEx 5 plugin for *Casualties: Unknown* that keeps Steam achievements enabl
 ## How it works
 
 Achievement unlocking is gated by a single static field, `SteamManager.disableAchievements`.
-The game writes this field from exactly two methods and reads it from one.
+The game sets it from exactly two methods and reads it from one.
 
 | Written by | Condition | Handling |
 |---|---|---|
-| `ConsoleScript.CheckForCheats()` | Any console command that calls this check | A Harmony prefix returns `false`; the original method body is not executed |
-| `SaveSystem.TryLoadGame()` | The `cheatedSave` field of the save file is `true` | The field is cleared in memory immediately after loading; the game writes `false` back into the file on the next save |
+| `ConsoleScript.CheckForCheats()` | Any console command that calls this check | A Harmony prefix returns `false`; the method body never runs, so the flag is never set and the accompanying warning is never printed |
+| `SaveSystem.TryLoadGame()` | The save file stores `cheatedSave: true` | The flag is cleared in a postfix immediately after loading. The game's warning has already been printed and is left untouched |
 
-Because both writers are neutralised, `SteamManager.TryUnlockAchievement()` — the only reader —
-never observes a set flag. The game's own decision logic is not modified.
+What this means in practice:
 
-The plugin does not unlock achievements, does not alter or suppress any in-game message, and does
-not write to save files during normal play. Cleaning a save file on disk is an explicit action.
+- Console commands do not disable achievements at all.
+- Loading a flagged save still prints the game's own warning once. From that point on the flag is
+  `false`, so achievements unlock normally for the rest of the session.
+- The next normal save stores `cheatedSave: false`: `SaveSystem.SaveGame` writes the current value
+  of the flag, so the file is cleaned by the game itself. Until a save happens the file keeps its
+  previous value.
+- No save file is written during play. `kma unmarksave` is the only path that rewrites saves, and it
+  does so atomically.
+- Two console lines report activity without opening the console: one per session when the first
+  save is loaded (`… working …`), and one each time a flagged save's lock is cleared
+  (`… cleared the achievement lock of this save …`).
+
+The plugin does not unlock achievements and does not modify or suppress any in-game message.
 
 ## Installation
 
@@ -42,22 +52,13 @@ Open the in-game console with `` ` `` and enter:
 > **Back up your save directory before using `kma unmarksave`.** The command rewrites save files in
 > place and the plugin does not keep copies of them.
 
-`kma` without arguments prints usage. On the first load of a session the plugin also appends one
-confirmation line to the console history (`CU-KeepMyAchievement: working …`) without opening the
-console.
+`kma` without arguments prints usage.
 
 ## Implementation notes
 
-- The gate is a single `static bool`, `SteamManager.disableAchievements`. It is assigned in
-  `ConsoleScript.CheckForCheats()` and `SaveSystem.TryLoadGame()`, and read in
-  `SteamManager.TryUnlockAchievement()`.
 - The console check is bypassed with a Harmony prefix returning `false`, rather than by resetting
   the flag afterwards. Resetting would still execute the original method, which opens the console
   and emits a warning; skipping the method body prevents that state from being created at all.
-- **Loading does not write files.** `TryLoadGame` sets the flag and reports it; the plugin clears
-  the flag in a postfix. `SaveSystem.SaveGame` serialises the same field, so the next save stores
-  `false` and the file is cleaned by the game's own code. Until a save happens the file keeps its
-  previous value.
 - **`kma unmarksave` is the only path that writes a save file.** It packs the edited document with
   the game's `SaveSystem.Zip`, verifies the bytes read back from disk, writes them to a temporary
   file beside the save and replaces the original atomically (`MoveFileEx`), then re-reads the
