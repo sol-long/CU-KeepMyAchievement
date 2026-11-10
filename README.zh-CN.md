@@ -4,28 +4,6 @@
 
 适用于 *Casualties: Unknown* 的 BepInEx 5 插件，用于保持 Steam 成就可用。
 
-## 工作方式
-
-成就解锁由一个静态字段统一控制：`SteamManager.disableAchievements`。游戏只有两个方法写入它，
-一个方法读取它。
-
-| 写入方 | 触发条件 | 处理方式 |
-|---|---|---|
-| `ConsoleScript.CheckForCheats()` | 任一调用该校验的控制台命令 | Harmony Prefix 返回 `false`，方法体不执行，因此标记不会被置位，随附的警告也不会打印 |
-| `SaveSystem.TryLoadGame()` | 存档文件中保存了 `cheatedSave: true` | 读档完成后的 Postfix 中清除该标记。游戏自身的警告已经打印，插件不作处理 |
-
-实际效果：
-
-- 控制台命令不再禁用成就。
-- 载入被标记的存档时，游戏自身的警告仍会出现一次；此后标记为 `false`，本局内成就正常解锁。
-- 下一次正常存档写入的是 `cheatedSave: false`：`SaveSystem.SaveGame` 保存的正是该字段的当前值，
-  文件因此由游戏自己完成清洗；在玩家存档之前，文件保持原值。
-- 正常游玩过程中不写存档文件。`kma unmarksave` 是唯一会重写存档的路径，且采用原子替换。
-- 有两处控制台信息不需要打开控制台即可见：每局首次读档时一行（`… working …`），
-  每次清除被标记存档的锁时一行（`… cleared the achievement lock of this save …`）。
-
-本插件不解锁成就，也不修改或屏蔽游戏内的任何提示。
-
 ## 安装
 
 依赖：游戏版本 **1.0**（Steam buildid `26525321`），以及 BepInEx 5.4.23.x（x64，Mono）。
@@ -47,6 +25,28 @@
 > **使用 `kma unmarksave` 前请自行备份存档目录。** 该命令会就地重写存档文件，插件不保留副本。
 
 不带参数的 `kma` 输出用法。
+
+## 工作方式
+
+成就解锁由一个静态字段统一控制：`SteamManager.disableAchievements`。游戏只有两个方法写入它，
+一个方法读取它。
+
+| 写入方 | 触发条件 | 处理方式 |
+|---|---|---|
+| `ConsoleScript.CheckForCheats()` | 任一调用该校验的控制台命令 | Harmony Prefix 返回 `false`，方法体不执行，因此标记不会被置位，随附的警告也不会打印 |
+| `SaveSystem.TryLoadGame()` | 存档文件中保存了 `cheatedSave: true` | 读档完成后的 Postfix 中清除该标记。游戏自身的警告已经打印，插件不作处理 |
+
+实际效果：
+
+- 控制台命令不再禁用成就。
+- 载入被标记的存档时，游戏自身的警告仍会出现一次；此后标记为 `false`，本局内成就正常解锁。
+- 下一次正常存档写入的是 `cheatedSave: false`：`SaveSystem.SaveGame` 保存的正是该字段的当前值，
+  文件因此由游戏自己完成清洗；在玩家存档之前，文件保持原值。
+- 正常游玩过程中不写存档文件。`kma unmarksave` 是唯一会重写存档的路径，且采用原子替换。
+- 有两处控制台信息不需要打开控制台即可见：每局首次读档时一行（`… working …`），
+  每次清除被标记存档的锁时一行（`… cleared the achievement lock of this save …`）。
+
+本插件不解锁成就，也不修改或屏蔽游戏内的任何提示。
 
 ## 实现说明
 

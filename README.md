@@ -4,6 +4,30 @@
 
 A BepInEx 5 plugin for *Casualties: Unknown* that keeps Steam achievements enabled.
 
+## Installation
+
+Requirements: game version **1.0** (Steam buildid `26525321`), and BepInEx 5.4.23.x (x64, Mono).
+
+1. Copy `CU-KeepMyAchievement.dll` into `<Game>\BepInEx\plugins\CU-KeepMyAchievement\`.
+2. Launch the game. `BepInEx\LogOutput.log` must contain the line
+   `CU-KeepMyAchievement v0.1.1 loaded.`
+
+The plugin has no configuration file. Removing the dll restores the unmodified behaviour.
+
+## Console commands
+
+Open the in-game console with `` ` `` and enter:
+
+| Command | Description |
+|---|---|
+| `kma status` | Reports the plugin version, the number of patched methods, the current value of `disableAchievements`, the result of `SaveSystem.HasSave()`, and the marker stored in every save file |
+| `kma unmarksave` | Forces the marker out of every `*.sv` file of the save directory. Files are replaced atomically; no backup copy is created |
+
+> **Back up your save directory before using `kma unmarksave`.** The command rewrites save files in
+> place and the plugin does not keep copies of them.
+
+`kma` without arguments prints usage.
+
 ## How it works
 
 Achievement unlocking is gated by a single static field, `SteamManager.disableAchievements`.
@@ -29,30 +53,6 @@ What this means in practice:
   (`… cleared the achievement lock of this save …`).
 
 The plugin does not unlock achievements and does not modify or suppress any in-game message.
-
-## Installation
-
-Requirements: game version **1.0** (Steam buildid `26525321`), and BepInEx 5.4.23.x (x64, Mono).
-
-1. Copy `CU-KeepMyAchievement.dll` into `<Game>\BepInEx\plugins\CU-KeepMyAchievement\`.
-2. Launch the game. `BepInEx\LogOutput.log` must contain the line
-   `CU-KeepMyAchievement v0.1.1 loaded.`
-
-The plugin has no configuration file. Removing the dll restores the unmodified behaviour.
-
-## Console commands
-
-Open the in-game console with `` ` `` and enter:
-
-| Command | Description |
-|---|---|
-| `kma status` | Reports the plugin version, the number of patched methods, the current value of `disableAchievements`, the result of `SaveSystem.HasSave()`, and the marker stored in every save file |
-| `kma unmarksave` | Forces the marker out of every `*.sv` file of the save directory. Files are replaced atomically; no backup copy is created |
-
-> **Back up your save directory before using `kma unmarksave`.** The command rewrites save files in
-> place and the plugin does not keep copies of them.
-
-`kma` without arguments prints usage.
 
 ## Implementation notes
 
