@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
@@ -115,7 +116,7 @@ namespace KeepMyAchievement
         {
             Say("CU-KeepMyAchievement v" + Version);
             Say("  kma status      - show plugin state and each save file's cheated flag");
-            Say("  kma unmarksave  - remove the cheated flag from all save files (keeps *.keeper.bak)");
+            Say("  kma unmarksave  - remove the cheated flag from all save files (rewrites them in place)");
         }
 
         private static void PrintStatus()
@@ -218,7 +219,11 @@ namespace KeepMyAchievement
     /// <summary>存档标记的读与写，压缩/解压一律走游戏自己的 SaveSystem.Unzip / Zip。</summary>
     internal static class SaveMarker
     {
-        internal const string BackupSuffix = ".keeper.bak";
+        private const int MoveFileReplaceExisting = 0x1;
+        private const int MoveFileWriteThrough = 0x8;
+
+        [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool MoveFileEx(string existingFileName, string newFileName, int flags);
 
         private static string SaveDir
         {
@@ -322,7 +327,7 @@ namespace KeepMyAchievement
                     if (Rewrite(path))
                     {
                         changed++;
-                        say(name + ": true -> false (backup " + name + BackupSuffix + ")");
+                        say(name + ": true -> false");
                     }
                 }
                 catch (Exception e)
@@ -334,19 +339,18 @@ namespace KeepMyAchievement
         }
 
         /// <summary>
-        /// 原子改写：先写临时文件并从磁盘校验，再用 File.Replace 替换（上一版本落到 .keeper.bak），
-        /// 最后回读目标文件确认。任一步失败都不留下半截文件。
+        /// 原子改写：先写临时文件并从磁盘校验，再用 MoveFileEx 原子替换，最后回读确认。
+        /// 不产生备份文件；原字节留在内存里，任何一步失败都用它还原。
         /// </summary>
         private static bool Rewrite(string path)
         {
-            string json = SaveSystem.Unzip(File.ReadAllBytes(path));
+            byte[] original = File.ReadAllBytes(path);
+            string json = SaveSystem.Unzip(original);
             JObject obj = JObject.Parse(json);
             obj["cheatedSave"] = false;
             byte[] packed = SaveSystem.Zip(obj.ToString(Formatting.None));
 
             string temp = path + ".tmp";
-            string backup = path + BackupSuffix;
-
             File.WriteAllBytes(temp, packed);
             try
             {
@@ -355,16 +359,21 @@ namespace KeepMyAchievement
                 if (check == null || check.Type != JTokenType.Boolean || check.Value<bool>())
                     throw new InvalidOperationException("verification of the temporary file failed, original untouched");
 
-                // Replace 会把原文件内容落到 backup，并在同一卷上原子替换
-                if (File.Exists(backup)) File.Delete(backup);
-                File.Replace(temp, path, backup);
+                // 同卷原子替换，不留下备份文件
+                if (!MoveFileEx(temp, path, MoveFileReplaceExisting | MoveFileWriteThrough))
+                {
+                    KeepMyAchievementPlugin.Log.LogWarning(
+                        "MoveFileEx failed (" + Marshal.GetLastWin32Error() + "), falling back to in-place overwrite");
+                    File.Copy(temp, path, true);
+                    File.Delete(temp);
+                }
 
-                // 写后回读：确认目标文件确实是干净存档
+                // 写后回读，失败则用内存里的原始字节还原
                 JToken after = JObject.Parse(SaveSystem.Unzip(File.ReadAllBytes(path)))["cheatedSave"];
                 if (after == null || after.Type != JTokenType.Boolean || after.Value<bool>())
                 {
-                    if (File.Exists(backup)) File.Copy(backup, path, true);
-                    throw new InvalidOperationException("read-back failed, original restored from backup");
+                    File.WriteAllBytes(path, original);
+                    throw new InvalidOperationException("read-back failed, original bytes restored");
                 }
                 return true;
             }

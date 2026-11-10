@@ -37,7 +37,10 @@ Open the in-game console with `` ` `` and enter:
 | Command | Description |
 |---|---|
 | `kma status` | Reports the plugin version, the number of patched methods, the current value of `disableAchievements`, the result of `SaveSystem.HasSave()`, and the marker stored in every save file |
-| `kma unmarksave` | Forces the marker out of every `*.sv` file of the save directory. Each file is replaced atomically, and its previous version is kept as `*.keeper.bak` |
+| `kma unmarksave` | Forces the marker out of every `*.sv` file of the save directory. Files are replaced atomically; no backup copy is created |
+
+> **Back up your save directory before using `kma unmarksave`.** The command rewrites save files in
+> place and the plugin does not keep copies of them.
 
 `kma` without arguments prints usage. On the first load of a session the plugin also appends one
 confirmation line to the console history (`CU-KeepMyAchievement: working …`) without opening the
@@ -56,9 +59,10 @@ console.
   `false` and the file is cleaned by the game's own code. Until a save happens the file keeps its
   previous value.
 - **`kma unmarksave` is the only path that writes a save file.** It packs the edited document with
-  the game's `SaveSystem.Zip`, verifies the bytes read back from disk, replaces the file with
-  `File.Replace` (atomic on the same volume; the previous version becomes the `.keeper.bak`), then
-  re-reads the result and restores the backup if the file is not clean.
+  the game's `SaveSystem.Zip`, verifies the bytes read back from disk, writes them to a temporary
+  file beside the save and replaces the original atomically (`MoveFileEx`), then re-reads the
+  result. The previous bytes are held in memory and written back if the result is not clean. The
+  plugin keeps no backup copies of save files.
 - The flag is scoped to the current process and starts as `false` on every launch. Because the
   game stores it on every save, clearing it in memory is enough to make the next save clean.
 
