@@ -11,11 +11,7 @@
 1. 将 `CU-KeepMyAchievement.dll` 复制到 `<游戏目录>\BepInEx\plugins\CU-KeepMyAchievement\`。
 2. 启动游戏，`BepInEx\LogOutput.log` 中应出现 `CU-KeepMyAchievement v0.1.1 loaded.`。
 
-插件没有配置文件。删除 dll 即可恢复游戏原始行为。
-
 ## 命令（可选）
-
-以下命令都不是必需的。
 
 按 `` ` `` 打开游戏内控制台，输入：
 

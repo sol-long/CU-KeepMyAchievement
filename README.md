@@ -13,11 +13,7 @@ Requirements: game version **1.0** (Steam buildid `26525321`), and BepInEx 5.4.2
 2. Launch the game. `BepInEx\LogOutput.log` must contain the line
    `CU-KeepMyAchievement v0.1.1 loaded.`
 
-The plugin has no configuration file. Removing the dll restores the unmodified behaviour.
-
 ## Commands (optional)
-
-None of these are required.
 
 Open the in-game console with `` ` `` and enter:
 
