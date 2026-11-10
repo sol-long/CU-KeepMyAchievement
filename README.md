@@ -25,7 +25,7 @@ does not modify any other field of the save file.
 
 ## Installation
 
-Requirements: BepInEx 5.4.23.x (x64, Mono).
+Requirements: game version **1.0** (Steam buildid `26525321`), and BepInEx 5.4.23.x (x64, Mono).
 
 1. Copy `CU-KeepMyAchievement.dll` into `<Game>\BepInEx\plugins\CU-KeepMyAchievement\`.
 2. Launch the game. `BepInEx\LogOutput.log` must contain the line

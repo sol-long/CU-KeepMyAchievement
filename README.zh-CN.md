@@ -23,7 +23,7 @@
 
 ## 安装
 
-依赖：BepInEx 5.4.23.x（x64，Mono）。
+依赖：游戏版本 **1.0**（Steam buildid `26525321`），以及 BepInEx 5.4.23.x（x64，Mono）。
 
 1. 将 `CU-KeepMyAchievement.dll` 复制到 `<游戏目录>\BepInEx\plugins\CU-KeepMyAchievement\`。
 2. 启动游戏，`BepInEx\LogOutput.log` 中应出现 `CU-KeepMyAchievement v0.1.0 loaded.`。
